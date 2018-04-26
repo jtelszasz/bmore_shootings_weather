@@ -61,7 +61,8 @@ Can also look at this frequency distribution with a split for pre and post 2015.
 daily.shooting %>%
   ggplot(aes(all.shootings, color = year(crimedate) >= 2015)) +
   geom_freqpoly(bins = 12) +
-  theme_minimal()
+  theme_minimal() +
+  ggsave(filename = "img/poisson.png", width = 6, height = 4)
 ```
 
 Joining the shooting counts to the weather data. For whatever reason, the Maryland Science Center data doesn't include an average daily temp, just the max and min, so we'll calculate a median off of that range and use that for the model.
@@ -80,7 +81,8 @@ daily.shootings.weather %>%
              color = year(crimedate) >= 2015)) +
   geom_jitter(size = 2, alpha = 0.4) +
   geom_smooth(method='lm', formula = y ~ x, fill = NA) +
-  theme_minimal()
+  theme_minimal() +
+  ggsave(filename = "img/trends.png", width = 6, height = 4)
 ```
 
 If you look at the scatter plot (with jitter added so there aren't points right on top of each other) you can see more blue (2015 and after) days towards the top of the plot because we've seen more shootings these past few years.
