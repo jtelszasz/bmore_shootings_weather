@@ -1,0 +1,160 @@
+---
+title: "Weather and Shootings in Baltimore"
+author: "Justin Elszasz"
+date: "April 25, 2018"
+output:
+    html_notebook:
+    toc: yes
+    toc_float: yes
+---
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(RSocrata)
+library(lubridate)
+```
+I grabbed [daily weather data from NOAA](https://www.ncdc.noaa.gov/cdo-web/datasets) back to 2012 since that's what we have part 1 crime data on [Open Baltimore](https://data.baltimorecity.gov/Public-Safety/BPD-Part-1-Victim-Based-Crime-Data/wsfq-mvij) for. Had to grab it in two csv's. Somewhere I have a Python script for getting weather data from Weather Underground's API. I downloaded it for all weather stations in Baltimore City area but I'll just filter it for the Maryland Science Center weather station.
+
+```{r}
+weather <- read.csv("1325092.csv") %>%
+  bind_rows(read.csv("1325101.csv")) %>%
+  filter(NAME == "MARYLAND SCIENCE CENTER, MD US") %>%
+  mutate_at("DATE", as.Date)
+```
+
+And through the RSocrata package, it's super easy to connect to an open dataset in R.
+
+```{r}
+endpoint <- "https://data.baltimorecity.gov/resource/4ih5-d5d5.json"
+crime <- read.socrata(endpoint)
+```
+
+Next I'll take that crime data (where each row is an incident) and do daily counts for the number of homicides, number of non-fatal shootings, and the sum of those two counts.
+
+```{r}
+weekly.shooting <- crime %>% 
+  mutate_at("crimedate", as.Date) %>%
+  mutate(week.start = floor_date(crimedate, "week")) %>%
+  group_by(week.start) %>%
+  summarise(nfs = sum(description == "SHOOTING"),
+            hom = sum(description == "HOMICIDE"),
+            all.shootings = nfs + hom)
+
+head(weekly.shooting, 25)
+```
+
+The total daily shootings + homicides are counts so we expect a Poisson distribution.
+
+```{r}
+weekly.shooting %>%
+  ggplot(aes(all.shootings)) +
+  geom_histogram(bins = 40) +
+  theme_minimal()
+```
+
+Can also look at this frequency distribution with a split for pre and post 2015. As we expect, the 2015+ period is shifted to the right (more total shootings).
+
+```{r}
+weekly.shooting %>%
+  ggplot(aes(all.shootings, color = year(week.start) >= 2015)) +
+  geom_freqpoly(bins = 12) +
+  theme_minimal() +
+  ggsave(filename = "img/poisson_weekly.png", width = 6, height = 4)
+```
+
+Joining the shooting counts to the weather data. For whatever reason, the Maryland Science Center data doesn't include an average daily temp, just the max and min, so we'll calculate a median off of that range and use that for the model.
+
+```{r}
+# prepare weather data
+
+weekly.weather <- weather %>%
+  mutate(week.start = floor_date(DATE, "week")) %>%
+  group_by(week.start) %>%
+  summarise(mean.max.temp = mean(TMAX, na.rm = T),
+            mean.min.temp = mean(TMIN, na.rm = T),
+            days.precip = sum(PRCP > 0.05), # precip threshold decent?
+            total.precip = sum(PRCP)) %>%
+  mutate(uprising = ifelse(week.start <= "2015-05-01", "Before May 2015", "May 2015 +"))
+
+```
+
+```{r}
+# join and prepare weekly shootings and weather
+
+weekly.data <- weekly.shooting %>%
+  left_join(weekly.weather, by = c("week.start"))
+
+```
+
+Let's take a quick look at the correlation between temperature and total shootings. Also interested in pre-2015 and 2015+ split.
+
+```{r}
+weekly.data %>%
+  ggplot(aes(mean.max.temp, all.shootings, 
+             color = uprising)) +
+  geom_jitter(size = 2, alpha = 0.4) +
+  geom_smooth(method='lm', formula = y ~ x, fill = NA) +
+  theme_minimal() +
+  xlab("Average Daily Maximum Temp (deg F)") +
+  ylab("Weekly Total Shootings (Non-Fatal + Hom.)") +
+  ggtitle("Effect of Outdoor Temperature on Weekly Shootings in Baltimore") +
+  theme(legend.title = element_blank()) +
+  ggsave(filename = "img/trends_weekly.png", width = 6, height = 4)
+```
+
+If you look at the scatter plot (with jitter added so there aren't points right on top of each other) you can see more blue (2015 and after) weeks towards the top of the plot because we've seen more shootings these past few years.
+
+Another way to visualize it might be a boxplot, where along the x-axis we use the total number of shootings and use the y-axis for the temperature. Again we see the increase in temperature with increase in shootings.
+
+```{r}
+weekly.data %>%
+  ggplot(aes(as.factor(all.shootings), mean.max.temp)) + 
+  geom_boxplot() + 
+  #facet_wrap(~ (year(crimedate) >= 2015)) +
+  theme_minimal()
+```
+
+Since shootings are weekly counts we expect this to follow a Poisson distribution. So, we'll use a generalized linear model with a log-link. Let's make a model for before 2015 and 2015 and after so we can compare.
+
+```{r}
+model.pre2015 <- glm(all.shootings ~ mean.max.temp, 
+                     data = weekly.data %>%
+                       filter(week.start <= "2015-05-01"), 
+                     family = "poisson")
+
+
+summary(model.pre2015)
+```
+
+```{r}
+model.post2015 <- glm(all.shootings ~ mean.max.temp, 
+                     data = weekly.data %>%
+                       filter(week.start > "2015-05-01"), 
+                     family = "poisson")
+
+
+summary(model.post2015)
+```
+
+# EDIT -------------
+
+For the pre-2015 model, we've got an intercept of -.21. Since this is a logistic-link, the intercept for number of shootings is exp(-0.21) = 0.81. In other words, at 0 degrees Fahrenheit for the median outdoor temperature, we'd expect 0.8 total shootings for the day.
+
+The coefficient for the daily median temperature is 0.011. We'll multiply this by 10 so we can understand the effect in terms of 10 degree F increments: exp(10 * 0.011) = 1.12. __This means that for every 10 degree F increase in outdoor median temperature, we expect a 12% increase in the total number of shootings__ (again, homicides plus non-fatal shootings).  
+
+For the 2015 and after model, we've got an intercept of .21. At 0 degrees Fahrenheit for the median outdoor temperature during and after 2015, we'd expect 1.2 total shootings for the day - a noticeable increase over the baseline intercept for pre-2015.
+
+In this model, the coefficient for the daily median temperature is 0.013, resulting in a expected increase factor of 1.14: __for every 10 degrees F increase in outdoor median temperature in 2015 and thereafter, we expect a 14% increase in the total number of shootings__, which is not all that different of an effect from pre-2015.
+
+It's sensible that the effect of weather on total shootings hasn't itself dramatically changed. A model for all years (without considering this 2015 split) gives __an effect of about 12% increase in shootings with every 10 degree F increase in daily median temperature.__
+
+# ----------------------
+
+```{r}
+model.all <- glm(all.shootings ~ mean.max.temp, 
+                     data = weekly.data, 
+                     family = "poisson")
+
+summary(model.all)
+```
