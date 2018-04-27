@@ -57,9 +57,13 @@ Can also look at this frequency distribution with a split for pre and post 2015.
 
 ```{r}
 weekly.shooting %>%
-  ggplot(aes(all.shootings, color = year(week.start) >= 2015)) +
+  mutate(uprising = ifelse(week.start <= "2015-05-01", "Before May 2015", "May 2015 +")) %>%
+  ggplot(aes(all.shootings, color = uprising)) +
   geom_freqpoly(bins = 12) +
   theme_minimal() +
+  theme(legend.title = element_blank()) +
+  ylab("Count") +
+  xlab("Weekly Shootings") +
   ggsave(filename = "img/poisson_weekly.png", width = 6, height = 4)
 ```
 
@@ -74,8 +78,7 @@ weekly.weather <- weather %>%
   summarise(mean.max.temp = mean(TMAX, na.rm = T),
             mean.min.temp = mean(TMIN, na.rm = T),
             days.precip = sum(PRCP > 0.05), # precip threshold decent?
-            total.precip = sum(PRCP)) %>%
-  mutate(uprising = ifelse(week.start <= "2015-05-01", "Before May 2015", "May 2015 +"))
+            total.precip = sum(PRCP)) 
 
 ```
 
