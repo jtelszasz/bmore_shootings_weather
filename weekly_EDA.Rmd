@@ -13,6 +13,7 @@ library(tidyverse)
 library(readxl)
 library(RSocrata)
 library(lubridate)
+library(RcppRoll)
 ```
 I grabbed [daily weather data from NOAA](https://www.ncdc.noaa.gov/cdo-web/datasets) back to 2012 since that's what we have part 1 crime data on [Open Baltimore](https://data.baltimorecity.gov/Public-Safety/BPD-Part-1-Victim-Based-Crime-Data/wsfq-mvij) for. Had to grab it in two csv's. Somewhere I have a Python script for getting weather data from Weather Underground's API. I downloaded it for all weather stations in Baltimore City area but I'll just filter it for the Maryland Science Center weather station.
 
@@ -39,7 +40,8 @@ weekly.shooting <- crime %>%
   group_by(week.start) %>%
   summarise(nfs = sum(description == "SHOOTING"),
             hom = sum(description == "HOMICIDE"),
-            all.shootings = nfs + hom)
+            all.shootings = nfs + hom) %>%
+  mutate(uprising = ifelse(week.start <= "2015-05-01", "Before May 2015", "May 2015 +"))
 
 head(weekly.shooting, 25)
 ```
@@ -57,7 +59,6 @@ Can also look at this frequency distribution with a split for pre and post 2015.
 
 ```{r}
 weekly.shooting %>%
-  mutate(uprising = ifelse(week.start <= "2015-05-01", "Before May 2015", "May 2015 +")) %>%
   ggplot(aes(all.shootings, color = uprising)) +
   geom_freqpoly(bins = 12) +
   theme_minimal() +
@@ -119,6 +120,91 @@ weekly.data %>%
   theme_minimal()
 ```
 
+
+
+```{r}
+weekly.data %>%
+  ggplot(aes(log(total.precip), all.shootings, 
+             color = uprising)) +
+  geom_jitter(size = 2, alpha = 0.4) +
+  geom_smooth(method='lm', formula = y ~ x, fill = NA) +
+  theme_minimal() +
+  #xlab("Average Daily Maximum Temp (deg F)") +
+  #ylab("Weekly Total Shootings (Non-Fatal + Hom.)") +
+  #ggtitle("Effect of Outdoor Temperature on Weekly Shootings in Baltimore") +
+  theme(legend.title = element_blank())
+  #ggsave(filename = "img/trends_weekly.png", width = 6, height = 4)
+```
+
+```{r}
+weekly.data %>%
+  ggplot(aes(days.precip, all.shootings, 
+             color = uprising)) +
+  geom_jitter(size = 2, alpha = 0.4) +
+  geom_smooth(method='lm', formula = y ~ x, fill = NA) +
+  theme_minimal() +
+  #xlab("Average Daily Maximum Temp (deg F)") +
+  #ylab("Weekly Total Shootings (Non-Fatal + Hom.)") +
+  #ggtitle("Effect of Outdoor Temperature on Weekly Shootings in Baltimore") +
+  theme(legend.title = element_blank())
+  #ggsave(filename = "img/trends_weekly.png", width = 6, height = 4)
+```
+
+```{r}
+weekly.data %>%
+  ggplot(aes(factor(days.precip > 0), all.shootings)) + 
+  geom_boxplot() + 
+  #facet_wrap(~ (year(crimedate) >= 2015)) +
+  theme_minimal()
+```
+
+
+```{r}
+weekly.data %>%
+  ggplot(aes(factor(total.precip > 0), all.shootings)) + 
+  geom_boxplot() + 
+  #facet_wrap(~ (year(crimedate) >= 2015)) +
+  theme_minimal()
+```
+
+
+```{r}
+weekly.data %>%
+  ggplot(aes(all.shootings, ..density.., color = factor(total.precip > 0.00))) + 
+  geom_freqpoly() + 
+  #facet_wrap(~ (year(crimedate) >= 2015)) +
+  theme_minimal()
+```
+
+## Autocorrelation/Lags
+
+```{r}
+acf(weekly.data$all.shootings)
+```
+
+About 15 lags (previous 15 previous weeks) are relevant.
+
+```{r}
+lags <- seq(15)
+
+lag_names <- paste("lag", formatC(lags, width = nchar(max(lags)), flag = "0"), 
+  sep = "_")
+lag_functions <- setNames(paste("dplyr::lag(., ", lags, ")"), lag_names)
+
+
+weekly.data <- weekly.data %>% 
+  mutate_at(vars(all.shootings), funs_(lag_functions))
+
+```
+
+
+```{r}
+
+```
+
+
+# Modeling 
+
 Since shootings are weekly counts we expect this to follow a Poisson distribution. So, we'll use a generalized linear model with a log-link. Let's make a model for before 2015 and 2015 and after so we can compare.
 
 ```{r}
@@ -130,6 +216,8 @@ model.pre2015 <- glm(all.shootings ~ mean.max.temp,
 
 summary(model.pre2015)
 ```
+
+
 
 ```{r}
 model.post2015 <- glm(all.shootings ~ mean.max.temp, 
@@ -156,9 +244,29 @@ It's sensible that the effect of weather on total shootings hasn't itself dramat
 # ----------------------
 
 ```{r}
-model.all <- glm(all.shootings ~ mean.max.temp, 
-                     data = weekly.data, 
+View(weekly.data)
+
+training.data <- weekly.data %>%
+  select(-nfs, -hom, -total.precip, -uprising, -mean.min.temp)
+
+model.all <- glm(all.shootings ~ ., 
+                     data = training.data, 
                      family = "poisson")
 
 summary(model.all)
 ```
+
+```{r}
+weekly.data.pred <- weekly.data %>%
+  mutate(pred = predict.glm(model.all, weekly.data %>% select(-nfs, -hom, -all.shootings), 
+                            type = "response"))
+```
+
+```{r}
+weekly.data.pred %>%
+  #filter(week.start >= "2017-01-01") %>%
+  ggplot(aes(week.start)) +
+  geom_line(aes(y = all.shootings)) +
+  geom_line(aes(y = pred), color = "red")
+```
+
