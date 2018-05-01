@@ -6,7 +6,7 @@ library(lubridate)
 
 weekly.df <- readRDS("cache.Rdata")
 
-predict.week.start <- floor_date(today() - dweeks(1), "week")
+#predict.week.start <- floor_date(today() - dweeks(1), "week")
 #train.start.week.start <- predict.week.start - dweeks(1)
 
 get_training_data <- function(predict.week.start){
@@ -15,7 +15,8 @@ get_training_data <- function(predict.week.start){
                                week.start >= (predict.week.start - lubridate::dweeks(53)))
   return(training.df)
 }
-
+training.data <- weekly.data %>%
+  select(-nfs, -hom, -total.precip, -uprising, -mean.min.temp)
 fit_weekly_model <- function(training.df){
   mod <- glm(all.shootings ~ ., 
              data = training.df, 
