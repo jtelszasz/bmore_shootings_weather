@@ -241,7 +241,7 @@ In this model, the coefficient for the daily median temperature is 0.013, result
 
 It's sensible that the effect of weather on total shootings hasn't itself dramatically changed. A model for all years (without considering this 2015 split) gives __an effect of about 12% increase in shootings with every 10 degree F increase in daily median temperature.__
 
-# ----------------------
+# ---------------------
 
 ```{r}
 View(weekly.data)
