@@ -5,9 +5,9 @@ account: jtelszasz
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 335340
-bundleId: 1350539
+bundleId: 1350547
 url: https://jtelszasz.shinyapps.io/bmore_shootings_weather/
-when: 1525223306.63432
+when: 1525223672.97556
 asMultiple: FALSE
 asStatic: FALSE
 ignoredFiles: create_cache.R|README.html|README.md|shootings_weather_analysis.nb.html|shootings_weather_analysis.Rmd|weekly_EDA.nb.html|weekly_EDA.Rmd|img/poisson_weekly.png|img/poisson.png|img/trends_weekly.png|img/trends.png

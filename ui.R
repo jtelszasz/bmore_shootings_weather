@@ -1,5 +1,6 @@
 library(shiny)
 library(lubridate)
+library(plotly)
 
 shinyUI(
   pageWithSidebar(
@@ -38,10 +39,9 @@ shinyUI(
       verbatimTextOutput("actual.value"),
       
       h3("Notes"),
-      p("The data used in the model to predict the number of weekly shootings include the outdoor temperature and the prior 15 weeks worth of shootings.")
-      
-  
-      #plotOutput('newPlot'),
+      p("The data used in the model to predict the number of weekly shootings include the outdoor temperature and the prior 15 weeks worth of shootings."),
+      plotlyOutput('plot.time.series'),
+      plotlyOutput("plot.ts.diff")
     )
     
     
